@@ -18,6 +18,9 @@ def dir_path_exist(path):
 
 def unzip_data(zip_path, target_dir):
     for item in os.listdir(zip_path):
+        exist_dir = zip_path + '/' + item
+        if os.path.isdir(exist_dir):
+            return
         if item.endswith('.zip'):
             with zipfile.ZipFile(zip_path + '/' + item, 'r') as zip_ref:
                 zip_ref.extractall(target_dir)
