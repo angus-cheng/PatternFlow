@@ -17,8 +17,9 @@ def dir_path_exist(path):
         return
 
 def load_data(web_url, path):
-    dir = 'path'
-    path = os.path.join(path, dir)
+    dir = 'data'
+    path = os.path.join(path, dir).replace('\\', '/')
+    dir_path_exist(path)
     wget.download(web_url, out=path)
 
 def preprocess_data(dir, height, width):
