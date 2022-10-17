@@ -2,25 +2,36 @@ import torch
 import torchvision
 import wget
 import os
-
+import zipfile
 
 def dir_path_exist(path):
     path = path.replace('\\', '/')
     data_path = os.path.join(path, 'data').replace('\\', '/')
 
     if os.path.isdir(data_path):
-        return
+        return True
     elif os.path.isdir(path):
-        return
+        return True
     else: 
         os.mkdir(path)
-        return
+        return False
+
+def unzip_data(zip_path, target_dir):
+    for item in os.listdir(zip_path):
+        if item.endswith('.zip'):
+            with zipfile.ZipFile(zip_path + '/' + item, 'r') as zip_ref:
+                zip_ref.extractall(target_dir)
+                zip_ref.close()
+    return
 
 def load_data(web_url, path):
     dir = 'data'
     path = os.path.join(path, dir).replace('\\', '/')
-    dir_path_exist(path)
-    wget.download(web_url, out=path)
+    if not dir_path_exist(path):
+        wget.download(web_url, out=path)
+    unzip_data(path, path)
+
+    return
 
 def preprocess_data(dir, height, width):
     data = torchvision.io.read_file(dir)
@@ -38,6 +49,8 @@ def preprocess_masks(dir, height, width):
     images = images / 255.0
     # threshold 
     images = (images > 0.5).float()
+
+    return images
     
 
 path = './'
