@@ -54,30 +54,52 @@ class ImprovedUnetModel(nn.Module):
         self.context_dropout = 0.3
         self.leaky_alpha = 1e-2
 
-        # Level one
+        # Encoder: Level one
         self.conv1 = nn.Conv2d(in_channels= 3, out_channels=self.initial_output, kernel_size=(3, 3), padding=self.padding)
         self.leaky_relu = nn.LeakyReLU(self.leaky_alpha)
         self.context_module = ContextModuleLayer(self.conv1.out_channels, self.initial_output)
         self.summation_layer = SummationLayer(self.leaky_relu, self.context_module)
 
-        # Level two
+        # Encoder: Level two
         self.conv2 = nn.LazyConv2d(self.initial_output * 2, (3, 3), stride=(2, 2))
         self.context_module2 = ContextModuleLayer(self.conv2.out_channels, self.initial_output * 2)
         self.summation_layer2 = SummationLayer(self.leaky_relu, self.context_module2)
 
+        # Encoder: Level three
+        self.conv3 = nn.LazyConv2d(self.initial_output * 4, (3, 3), stride=(2, 2))
+        self.context_module3 = ContextModuleLayer(self.conv3.out_channels, self.initial_output * 4)
+        self.summation_layer3 = SummationLayer(self.leaky_relu, self.context_module3)
+
+        # Encoder: Level four
+        self.conv4 = nn.LazyConv2d(self.initial_output * 8, (3, 3), stride=(2, 2))
+        self.context_module4 = ContextModuleLayer(self.conv4.out_channels, self.initial_output * 8)
+        self.summation_layer4 = SummationLayer(self.leaky_relu, self.context_module4)
+
     def forward(self, x):
-        # Level one
+        # Encoder: Level one
         x = self.conv1(x)
         x = self.leaky_relu(x)
         context = self.context_module(x, self.initial_output)
         first_level = self.summation_layer(x, context)
 
-        # Level two
+        # Encoder: Level two
         x = self.conv2(first_level)
         x = self.leaky_relu(x)
         context2 = self.context_module2(x, self.initial_output * 2)
         second_level = self.summation_layer2(x, context2)
-        return second_level
+
+        # Encoder: Level three
+        x = self.conv3(second_level)
+        x = self.leaky_relu(x)
+        context3 = self.context_module3(x, self.initial_output * 4)
+        third_level = self.summation_layer3(x, context3)
+
+        # Encoder: Level four
+        x = self.conv4(third_level)
+        x = self.leaky_relu(x)
+        context4 = self.context_module4(x, self.initial_output * 8)
+        fourth_level = self.summation_layer4(x, context4)
+        return fourth_level 
 
 device = "cuda"
 model = ImprovedUnetModel().to(device)
