@@ -2,14 +2,56 @@ import torch
 from torch import nn
 from torchsummary import summary
 
-def dice_coef(y_true, y_pred, smooth):
-    y_true_f = torch.flatten(y_true)
-    y_pred_f = torch.flatten(y_pred)
-    intersection = torch.sum(y_true_f * y_pred_f)
-    return (2.0 * intersection + smooth) / (torch.sum(y_true_f) + torch.sum(y_pred_f) + smooth)
+def f_score(pr, gt, beta=1, eps=1e-7, threshold=None, activation='sigmoid'):
+    """
+    Args:
+        pr (torch.Tensor): A list of predicted elements
+        gt (torch.Tensor):  A list of elements that are to be predicted
+        eps (float): epsilon to avoid zero division
+        threshold: threshold for outputs binarization
+    Returns:
+        float: IoU (Jaccard) score
+    """
 
-def dice_coef_loss(y_true, y_pred):
-    return 1.0 - dice_coef(y_true, y_pred)
+    if activation is None or activation == "none":
+        activation_fn = lambda x: x
+    elif activation == "sigmoid":
+        activation_fn = torch.nn.Sigmoid()
+    elif activation == "softmax2d":
+        activation_fn = torch.nn.Softmax2d()
+    else:
+        raise NotImplementedError(
+            "Activation implemented for sigmoid and softmax2d"
+        )
+
+    pr = activation_fn(pr)
+
+    if threshold is not None:
+        pr = (pr > threshold).float()
+
+
+    tp = torch.sum(gt * pr)
+    fp = torch.sum(pr) - tp
+    fn = torch.sum(gt) - tp
+
+    score = ((1 + beta ** 2) * tp + eps) \
+            / ((1 + beta ** 2) * tp + beta ** 2 * fn + fp + eps)
+
+    return score
+
+
+class DiceLoss(nn.Module):
+    __name__ = 'dice_loss'
+
+    def __init__(self, eps=1e-7, activation='sigmoid'):
+        super().__init__()
+        self.activation = activation
+        self.eps = eps
+
+    def forward(self, y_pr, y_gt):
+        return 1 - f_score(y_pr, y_gt, beta=1., 
+                           eps=self.eps, threshold=None, 
+                           activation=self.activation)
 
 class ContextModule(nn.Module):
     """(conv => BN => ReLU) * 2"""
@@ -160,7 +202,3 @@ class ImprovedUNetModel(nn.Module):
         seg3 = torch.add(seg2, seg3)
         x = self.outc(x)
         return torch.sigmoid(x)
-
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-model = ImprovedUNetModel(3, 4).to(device)
-summary(model, input_size=(3, 512, 512))
