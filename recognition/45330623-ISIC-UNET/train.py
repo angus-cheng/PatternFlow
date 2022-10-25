@@ -1,103 +1,79 @@
-import dataset
-import modules
+from dataset import train_loader, val_loader
+from modules import model
 import torch
 from torch import nn
 import numpy as np
-import time
+from tqdm.auto import tqdm as tq
 from tqdm.notebook import tqdm
 from datetime import datetime
 from torch.utils.tensorboard import SummaryWriter
+import math
+from torch.optim.optimizer import Optimizer, required
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def train_one_epoch(epoch_index, tb_writer):
-    running_loss = 0.
-    last_loss = 0.
+num_epochs = 10
+batch_size = 25
+learning_rate = 0.001
 
-    # Here, we use enumerate(training_loader) instead of
-    # iter(training_loader) so that we can track the batch
-    # index and do some intra-epoch reporting
-    for i, data in enumerate(training_loader):
-        # Every data instance is an input + label pair
-        inputs, labels = data
-        inputs, labels = inputs.to(device), labels.to(device)
-
-        # Zero your gradients for every batch!
-        optimizer.zero_grad()
-
-        # Make predictions for this batch
-        outputs = model(inputs)
-
-        # Compute the loss and its gradients
-        loss = loss_fn(outputs, labels)
-        loss.backward()
-
-        # Adjust learning weights
-        optimizer.step()
-
-        # Gather data and report
-        running_loss += loss.item()
-        if i % 1000 == 999:
-            last_loss = running_loss / 1000 # loss per batch
-            print('  batch {} loss: {}'.format(i + 1, last_loss))
-            tb_x = epoch_index * len(training_loader) + i + 1
-            tb_writer.add_scalar('Loss/train', last_loss, tb_x)
-            running_loss = 0.
-
-    return last_loss
-
-# Initializing in a separate cell so we can easily add more epochs to the same run
-timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-writer = SummaryWriter('runs/fashion_trainer_{}'.format(timestamp))
-epoch_number = 0
-loss_fn = torch.nn.CrossEntropyLoss()
-
-training_loader = dataset.train_loader
-validation_loader = dataset.val_loader
-model = modules.model
-
-max_lr = 1e-3
-epoch = 15
-weight_decay = 1e-4
+model = model.to(device)
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.AdamW(modules.model.parameters(), lr=max_lr, weight_decay=weight_decay)
+optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)
 
-EPOCHS = 5
+# keeping-track-of-losses 
+train_losses = []
+valid_losses = []
 
-best_vloss = 1_000_000.
+for epoch in range(1, num_epochs + 1):
+    # keep-track-of-training-and-validation-loss
+    train_loss = 0.0
+    valid_loss = 0.0
+    
+    # training-the-model
+    model.train()
+    for data, target in train_loader:
+        # move-tensors-to-GPU 
+        data = data.to(device)
+        target = target.to(device)
 
-for epoch in range(EPOCHS):
-    torch.cuda.empty_cache()
-    print('EPOCH {}:'.format(epoch_number + 1))
+        target = torch.argmax(target, dim=1)
+        
+        # clear-the-gradients-of-all-optimized-variables
+        optimizer.zero_grad()
+        # forward-pass: compute-predicted-outputs-by-passing-inputs-to-the-model
+        output = model(data)
+        # calculate-the-batch-loss
+        loss = criterion(output, target)
+        # backward-pass: compute-gradient-of-the-loss-wrt-model-parameters
+        with torch.autograd.set_detect_anomaly(True):
+            loss.backward()
+        # perform-a-ingle-optimization-step (parameter-update)
+        optimizer.step()
+        # update-training-loss
+        train_loss += loss.item() * data.size(0)
+        
+    # validate-the-model
+    model.eval()
+    for data, target in val_loader:
+        
+        data = data.to(device)
+        target = target.to(device)
 
-    # Make sure gradient tracking is on, and do a pass over the data
-    model.train(True)
-    avg_loss = train_one_epoch(epoch_number, writer)
-
-    # We don't need gradients on to do reporting
-    # model.train(False)
-
-    running_vloss = 0.0
-    for i, vdata in enumerate(validation_loader):
-        vinputs, vlabels = vdata
-        voutputs = model(vinputs)
-        vloss = loss_fn(voutputs, vlabels)
-        running_vloss += vloss
-
-    avg_vloss = running_vloss / (i + 1)
-    print('LOSS train {} valid {}'.format(avg_loss, avg_vloss))
-
-    # Log the running loss averaged per batch
-    # for both training and validation
-    writer.add_scalars('Training vs. Validation Loss',
-                    { 'Training' : avg_loss, 'Validation' : avg_vloss },
-                    epoch_number + 1)
-    writer.flush()
-
-    # Track best performance, and save the model's state
-    if avg_vloss < best_vloss:
-        best_vloss = avg_vloss
-        model_path = 'model_{}_{}'.format(timestamp, epoch_number)
-        torch.save(model.state_dict(), model_path)
-
-    epoch_number += 1
+        target = torch.argmax(target, dim=1)
+        
+        output = model(data)
+        
+        loss = criterion(output, target)
+        
+        # update-average-validation-loss 
+        valid_loss += loss.item() * data.size(0)
+    
+    # calculate-average-losses
+    train_loss = train_loss/len(train_loader.sampler)
+    valid_loss = valid_loss/len(val_loader.sampler)
+    train_losses.append(train_loss)
+    valid_losses.append(valid_loss)
+        
+    # print-training/validation-statistics 
+    print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}'.format(
+        epoch, train_loss, valid_loss))
